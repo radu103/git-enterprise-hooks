@@ -1,0 +1,15 @@
+format: conventional
+message: |-
+    [{task_key}] - {task_title}
+    Epic: {task_epic}
+
+    {summary}
+provider_github:
+    github_pat: ""
+    project: radu103/git-enterprise-hooks
+    url: https://github.com
+required: true
+rules:
+    reject_closed_tasks: true
+    verify_branch_name: feature/{task_key}-*
+    verify_task_exists: true

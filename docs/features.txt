@@ -1,0 +1,65 @@
+Architectural Decisions
+* Language: Go
+* CLI framework: Cobra
+* Configuration: Viper
+* Terminal UI: Bubble Tea + Bubbles + Lip Gloss
+* Git operations: go-git where appropriate, falling back to invoking git for commands that need full compatibility
+* HTTP/API: Go's standard net/http
+* Authentication: OAuth 2.0 with secure OS credential storage (Keychain, Credential Manager, Secret Service)
+* Auto-updates: Self-update mechanism (e.g., using a Go update library or release service)
+* Distribution: Homebrew, Scoop, Winget, apt, and standalone binaries
+* Config yaml file in project base root folder (same as .gitignore and .cfignore)
+
+Config provider properties (latest structure):
+1. provider_jira
+    - url
+    - user_email
+    - jira_api_token
+    - project
+
+2. provider_github
+    - url
+    - github_pat
+    - project
+
+3. provider_azure_devops
+    - url
+    - personal_access_token
+    - project
+
+Environment variable token fallback:
+1. Applies to provider_github.github_pat resolution at runtime.
+2. Supported env vars: GITHUB_PAT, GITHUB_TOKEN.
+3. If provider_github.github_pat is empty, fallback to env vars.
+4. Config value has precedence over env vars.
+5. Env var values are runtime-only secrets and are not persisted automatically into config.
+6. Jira fallback env vars: JIRA_API_TOKEN, JIRA_TOKEN (used when provider_jira.jira_api_token is empty).
+7. Azure DevOps fallback env vars: AZURE_DEVOPS_PAT, AZURE_DEVOPS_EXT_PAT, SYSTEM_ACCESSTOKEN (used when provider_azure_devops.personal_access_token is empty).
+
+Environment variable config-property fallback:
+1. GitHub URL/project can come from GITHUB_URL and GITHUB_PROJECT.
+2. Jira URL/user/project can come from JIRA_URL, JIRA_USER_EMAIL, JIRA_PROJECT.
+3. Azure DevOps URL/project can come from AZURE_DEVOPS_URL, AZDO_URL and AZURE_DEVOPS_PROJECT, AZDO_PROJECT.
+4. Provider setup prompts only for properties not found in config or env vars.
+
+Setup Logic / 'enable' command :
+1. check or add the pre-commit hook
+2. suggest setup provider logic to continue
+
+Clean-up Config Logic / 'disable' command :
+1. promp ask for confirmation : Yes / No to abort or continue next steps
+2. remove the managed pre-commit hook script
+
+Pre-Commit Logic / triggered by 'git commit' :
+1. If selected provider config is incomplete, ask and save provider settings in matching config block (provider_jira / provider_github / provider_azure_devops).
+2. Resolve auth token directly from active provider config values.
+2.1. For github provider, if provider_github.github_pat is empty, fallback to GITHUB_PAT or GITHUB_TOKEN.
+2.2. For jira provider, if provider_jira.jira_api_token is empty, fallback to JIRA_API_TOKEN or JIRA_TOKEN.
+2.3. For azure devops provider, if provider_azure_devops.personal_access_token is empty, fallback to AZURE_DEVOPS_PAT, AZURE_DEVOPS_EXT_PAT, or SYSTEM_ACCESSTOKEN.
+3. Store prompted provider URL and token variables directly in config.
+4. Save only the active provider config block in the config file.
+5. If configuration 'verify_branch_name' is not empty fail with error message to enforce branch name
+6. Basic search of tasks by code or partial text in title
+7. List to select 1 task only. Use the 'reject_closed_tasks' and 'verify_task_exists' configuration to allow user task selection properly
+8. Format the commit message using the format in configuration using the data collected so far. User input for summary and also user can edit the Title of task that was edited but not task_epic or task_key
+9. Exit and continue the git commit flow that started the logic by sending the formatted message to the pipeline

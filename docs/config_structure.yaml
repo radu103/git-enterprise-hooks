@@ -1,0 +1,25 @@
+required: true
+format: conventional
+message: "[{task_key}] - {task_title}\r\nEpic: {task_epic}\r\n\r\n{summary}"
+provider_jira: 
+  url: url of jira instance
+  user_email: email of jira user
+  jira_api_token: jira api token
+  project: project key
+provider_github: 
+  url: url of github instance
+  github_pat: personal access token
+  project: project key
+provider_azure_devops: 
+  url: url of azure devops instance
+  personal_access_token: personal access token
+  project: project key
+rules:
+  verify_branch_name: "feature/{task_key}-*"
+  verify_task_exists: true
+  reject_closed_tasks: true
+
+# token env fallback (when token field is empty):
+# provider_jira.jira_api_token -> JIRA_API_TOKEN or JIRA_TOKEN
+# provider_github.github_pat -> GITHUB_PAT or GITHUB_TOKEN
+# provider_azure_devops.personal_access_token -> AZURE_DEVOPS_PAT or AZURE_DEVOPS_EXT_PAT or SYSTEM_ACCESSTOKEN
