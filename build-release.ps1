@@ -18,17 +18,14 @@ $repoOwner = "radu103"
 $repoName = "git-enterprise-hooks"
 
 function Resolve-ReleaseVersion {
-    if ($env:RELEASE_VERSION -and $env:RELEASE_VERSION.Trim() -ne "") {
-        return $env:RELEASE_VERSION.Trim()
+    if (-not $env:RELEASE_VERSION -or $env:RELEASE_VERSION.Trim() -eq "") {
+        throw "RELEASE_VERSION is required. Set it before running build-release.ps1 (example: `$env:RELEASE_VERSION='0.0.1')."
     }
 
-    $tag = git describe --tags --exact-match 2>$null
-    if ($LASTEXITCODE -eq 0 -and $tag) {
-        return $tag.TrimStart("v")
-    }
-
-    return "0.0.0-dev"
+    return $env:RELEASE_VERSION.TrimStart("v").Trim()
 }
+
+$version = Resolve-ReleaseVersion
 
 foreach ($target in $targets) {
     $osFolder = Join-Path $releaseDir $target.Goos
@@ -50,7 +47,6 @@ Remove-Item Env:GOOS -ErrorAction SilentlyContinue
 Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
 Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue
 
-$version = Resolve-ReleaseVersion
 $windowsBinary = Join-Path $releaseDir "windows\git-enterprise-hooks-amd64.exe"
 if (Test-Path $windowsBinary) {
     $hash = (Get-FileHash -Algorithm SHA256 -Path $windowsBinary).Hash.ToLower()
