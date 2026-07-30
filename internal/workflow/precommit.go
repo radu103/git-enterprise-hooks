@@ -20,8 +20,8 @@ import (
 
 func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPath string) error {
 	if shouldSkipValidation() {
-		fmt.Println("git-enterprise-hooks: non-interactive commit mode detected; skipping hook validations.")
-		return nil
+		fmt.Println("git-enterprise-hooks: non-interactive commit mode detected; using fallback commit message.")
+		return writeFallbackCommitMessage(repoRoot, cfg)
 	}
 
 	if !providerConfigComplete(cfg) {
@@ -128,6 +128,35 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 	if err == nil {
 		fmt.Printf("Prepared commit message editor file: %s\n", commitMsgPath)
 	}
+	return nil
+}
+
+func writeFallbackCommitMessage(repoRoot string, cfg config.Config) error {
+	fallbackTask, err := nonInteractiveFallbackTask(repoRoot, cfg, "")
+	if err != nil {
+		return err
+	}
+
+	msg := commit.Render(cfg.Message, domain.CommitMessageContext{
+		TaskKey:   fallbackTask.Key,
+		TaskTitle: fallbackTask.Title,
+		TaskEpic:  fallbackTask.Epic,
+		Summary:   "",
+	})
+	if strings.TrimSpace(msg) == "" {
+		return fmt.Errorf(errs.FormattedCommitMessageEmpty)
+	}
+
+	outPath := filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt")
+	if err := os.WriteFile(outPath, []byte(msg), 0o644); err != nil {
+		return err
+	}
+
+	commitMsgPath, err := gitutil.GitPath(repoRoot, "COMMIT_EDITMSG")
+	if err == nil {
+		_ = os.WriteFile(commitMsgPath, []byte(msg), 0o644)
+	}
+
 	return nil
 }
 

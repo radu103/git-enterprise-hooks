@@ -49,7 +49,7 @@ var enableCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Enabled pre-commit hook in %s\n", repoRoot)
+		fmt.Printf("Enabled hooks (pre-commit, prepare-commit-msg) in %s\n", repoRoot)
 		fmt.Printf("Config: %s\n", cfgPath)
 		fmt.Printf("Provider type: %s\n", providerType)
 		printProviderSetupInstructions(providerType)
