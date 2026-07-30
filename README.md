@@ -90,6 +90,7 @@ Other supported provider env vars:
 
 ## Typical Flow
 
+
 1. Run `setup` once per repository (or `enable` if you only want hook install + provider type selection).
 2. Run `git commit` as usual.
 3. Pre-commit asks for task search query.
@@ -97,7 +98,7 @@ Other supported provider env vars:
 	 - no tasks: placeholder values are used and branch validation is skipped
 	 - one task: auto-selected with console message
 	 - multiple tasks in interactive terminal: selection UI is shown
-	 - multiple tasks in non-interactive session: first task is auto-selected
+	 - multiple tasks in non-interactive session: explicit error asks for interactive selection or exact key search
 5. Branch validation is enforced if `rules.verify_branch_name` is set.
 6. Commit message is rendered using configured template and saved into `.git/COMMIT_EDITMSG` and `.git/git-enterprise-hooks-message.txt`.
 

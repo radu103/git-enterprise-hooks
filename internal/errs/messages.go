@@ -7,6 +7,7 @@ const (
 
 	ProviderSetupIncompleteNonInteractive = "provider setup is incomplete for non-interactive commit. Run 'git-enterprise-hooks setup' first, or set required provider values in git-enterprise-hooks.yaml/.env"
 	TaskSelectionCanceled                 = "task selection canceled"
+	TaskSelectionRequiresInteractive      = "multiple tasks found in non-interactive mode; rerun in interactive terminal or search by exact task key"
 	FormattedCommitMessageEmpty           = "formatted commit message is empty"
 	MissingGithubToken                    = "missing github token: set provider_github.github_pat or GITHUB_TOKEN"
 	MissingAzureDevOpsToken               = "missing azure devops token: set provider_azure_devops.personal_access_token or AZURE_DEVOPS_PAT"
