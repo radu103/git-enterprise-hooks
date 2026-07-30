@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -102,7 +104,11 @@ func (j *JiraClient) SearchTasks(ctx context.Context, cfg config.ProviderConfig,
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+	authHeader := "Bearer " + tok.AccessToken
+	if strings.TrimSpace(tok.TokenType) != "" {
+		authHeader = tok.TokenType + " " + tok.AccessToken
+	}
+	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -110,8 +116,48 @@ func (j *JiraClient) SearchTasks(ctx context.Context, cfg config.ProviderConfig,
 		return nil, fmt.Errorf(errs.FmtJiraSearchFailed, err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 410 {
+		// New Jira Cloud requires POST /rest/api/3/search/jql with JSON body
+		jqlBody := map[string]any{"jql": jql, "maxResults": 20}
+		b, _ := json.Marshal(jqlBody)
+		u2 := base + "/rest/api/3/search/jql"
+		req2, err2 := http.NewRequestWithContext(ctx, http.MethodPost, u2, bytes.NewBuffer(b))
+		if err2 == nil {
+			req2.Header.Set("Authorization", req.Header.Get("Authorization"))
+			req2.Header.Set("Accept", "application/json")
+			req2.Header.Set("Content-Type", "application/json")
+			resp2, err2 := http.DefaultClient.Do(req2)
+			if err2 == nil {
+				defer resp2.Body.Close()
+				if resp2.StatusCode < 300 {
+					var body2 jiraSearchResponse
+					if err := json.NewDecoder(resp2.Body).Decode(&body2); err == nil {
+						out := make([]domain.Task, 0, len(body2.Issues))
+						for _, issue := range body2.Issues {
+							epic := ""
+							if issue.Fields.Parent != nil {
+								epic = issue.Fields.Parent.Key
+							}
+							out = append(out, domain.Task{
+								Key:      issue.Key,
+								Title:    issue.Fields.Summary,
+								Epic:     epic,
+								Status:   issue.Fields.Status.Name,
+								Provider: "jira",
+							})
+						}
+						return out, nil
+					}
+				}
+			}
+		}
+	}
+
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf(errs.FmtJiraSearchFailedWithStatus, resp.Status)
+		// include response body for easier debugging
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("%s: %s", fmt.Sprintf(errs.FmtJiraSearchFailedWithStatus, resp.Status), strings.TrimSpace(string(bodyBytes)))
 	}
 
 	var body jiraSearchResponse

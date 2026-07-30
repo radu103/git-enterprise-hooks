@@ -49,4 +49,5 @@ const (
 
 	FmtInvalidBranchPattern = "invalid branch pattern: %w"
 	FmtInvalidBranchName    = "invalid branch name '%s': branch does not follow required naming pattern '%s'. Rename your branch to include a valid task key (example: feature/ABC-123-short-description)"
+	AbortCommitNoTaskKey    = "no task found and branch name doesn't include a task key; aborting commit"
 )

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,6 +63,11 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		}
 		if strings.TrimSpace(query) != "" {
 			fmt.Printf("Non-interactive mode: using task key inferred from branch: %s\n", query)
+			// validate inferred key looks like provider task key (e.g. ABC-123). If not, abort.
+			matched, _ := regexp.MatchString(`^[A-Za-z]+-[0-9]+$`, strings.TrimSpace(query))
+			if !matched {
+				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+			}
 		}
 	}
 	tasks, err := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, query)
@@ -78,6 +84,22 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 	var selected *domain.Task
 
 	if len(tasks) == 0 {
+		// If no tasks found, check whether the branch name includes a task key.
+		// If the branch does not include a task key, abort the commit rather than continue with placeholder values.
+		branch, err := gitutil.CurrentBranch(repoRoot)
+		if err == nil {
+			branchTaskKey := extractTaskKeyFromBranch(cfg.Rules.VerifyBranchName, branch)
+			if strings.TrimSpace(branchTaskKey) == "" {
+				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+			}
+			// If branch task key exists but doesn't look like a provider task key (e.g. JIRA 'ABC-123'), abort.
+			// This prevents committing when the branch contains a numeric placeholder like '1' that won't match tasks.
+			matched, _ := regexp.MatchString(`^[A-Za-z]+-[0-9]+$`, strings.TrimSpace(branchTaskKey))
+			if !matched {
+				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+			}
+		}
+
 		skipBranchValidation = true
 		selected = &domain.Task{
 			Key:      "NONE",
@@ -297,6 +319,13 @@ func authTokenFromConfig(cfg config.Config) (domain.AuthToken, error) {
 		if strings.TrimSpace(tok) == "" {
 			return domain.AuthToken{}, fmt.Errorf(errs.MissingJiraToken)
 		}
+		email := jiraUserEmail(cfg)
+		if strings.TrimSpace(email) != "" {
+			// Jira Cloud API tokens require Basic auth with email:api_token base64
+			cred := base64.StdEncoding.EncodeToString([]byte(email + ":" + tok))
+			return domain.AuthToken{AccessToken: cred, TokenType: "Basic"}, nil
+		}
+		// fallback to Bearer with provided token
 		return domain.AuthToken{AccessToken: tok, TokenType: "Bearer"}, nil
 	}
 }

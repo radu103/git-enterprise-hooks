@@ -3,12 +3,13 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/radu103/git-enterprise-hooks/internal/domain"
-	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"golang.org/x/term"
 )
 
@@ -69,7 +70,28 @@ func SelectTask(tasks []domain.Task) (*domain.Task, error) {
 	}
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
-		return nil, fmt.Errorf(errs.TaskSelectionRequiresInteractive)
+		// Fall back to a simple numbered prompt when the interactive TUI isn't available.
+		fmt.Println("Interactive task selector unavailable; falling back to simple prompt.")
+		for i, t := range tasks {
+			fmt.Printf("%d) %s - %s\n    %s\n", i+1, t.Key, t.Title, t.Epic)
+		}
+		ans, err := Ask("Select task number (empty to cancel)", "")
+		if err != nil {
+			return nil, err
+		}
+		ans = strings.TrimSpace(ans)
+		if ans == "" {
+			return nil, nil
+		}
+		idx, err := strconv.Atoi(ans)
+		if err != nil {
+			return nil, fmt.Errorf("invalid selection")
+		}
+		if idx < 1 || idx > len(tasks) {
+			return nil, fmt.Errorf("selection out of range")
+		}
+		selected := tasks[idx-1]
+		return &selected, nil
 	}
 
 	items := make([]list.Item, 0, len(tasks))
