@@ -5,17 +5,17 @@
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/radu103/git-enterprise-hooks/releases/download/v0.0.1/git-enterprise-hooks-amd64.exe",
-      "hash": "4b240e6b4e258ed8a1dcbe497c6b8a0990f14f043f5b2241ff1b501b2bdc4fcc"
+      "url": "https://github.com/radu103/git-enterprise-hooks/releases/download/v0.0.1/git-enterprise-hooks-windows-amd64.exe",
+      "hash": "f6979d7d7746971742add9f19998133b507884412408e6f205b321ac259dd866"
     }
   },
   "bin": [
-    "git-enterprise-hooks-amd64.exe"
+    "git-enterprise-hooks-windows-amd64.exe"
   ],
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/radu103/git-enterprise-hooks/releases/download/v$version/git-enterprise-hooks-amd64.exe"
+        "url": "https://github.com/radu103/git-enterprise-hooks/releases/download/v$version/git-enterprise-hooks-windows-amd64.exe"
       }
     }
   }
