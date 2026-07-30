@@ -47,6 +47,19 @@ func HooksDir(repoRoot string) (string, error) {
 	return filepath.Join(repoRoot, hooks), nil
 }
 
+func GitPath(repoRoot, rel string) (string, error) {
+	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-path", rel)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve git path '%s': %w", rel, err)
+	}
+	resolved := strings.TrimSpace(string(out))
+	if filepath.IsAbs(resolved) {
+		return resolved, nil
+	}
+	return filepath.Join(repoRoot, resolved), nil
+}
+
 func EnsureIgnoreFile(path string) error {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return os.WriteFile(path, []byte(""), 0o644)

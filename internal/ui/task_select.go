@@ -61,6 +61,11 @@ func SelectTask(tasks []domain.Task) (*domain.Task, error) {
 		return nil, nil
 	}
 
+	if len(tasks) == 1 {
+		selected := tasks[0]
+		return &selected, nil
+	}
+
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
 		selected := tasks[0]
 		return &selected, nil

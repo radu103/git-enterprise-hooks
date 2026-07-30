@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,20 @@ type githubSearchResponse struct {
 		Title  string `json:"title"`
 		State  string `json:"state"`
 	} `json:"items"`
+}
+
+type githubIssue struct {
+	Number      int    `json:"number"`
+	Title       string `json:"title"`
+	State       string `json:"state"`
+	Body        string `json:"body"`
+	ParentIssue struct {
+		Number int `json:"number"`
+	} `json:"parent_issue,omitempty"`
+	ParentIssueURL string `json:"parent_issue_url,omitempty"`
+	PullRequest    *struct {
+		URL string `json:"url"`
+	} `json:"pull_request,omitempty"`
 }
 
 func (g *GithubClient) Authenticate(ctx context.Context, cfg config.ProviderConfig, username, password string) (domain.AuthToken, error) {
@@ -42,12 +57,35 @@ func (g *GithubClient) SearchTasks(ctx context.Context, cfg config.ProviderConfi
 	if strings.TrimSpace(cfg.ProjectKey) == "" {
 		return nil, fmt.Errorf("github project is missing (expected owner/repo)")
 	}
+	owner, repo, err := splitRepoKey(cfg.ProjectKey)
+	if err != nil {
+		return nil, err
+	}
 
 	apiBase := githubAPIBase(cfg.TokenURL)
-	q := []string{"repo:" + cfg.ProjectKey, "is:issue"}
-	if strings.TrimSpace(query) != "" {
-		q = append(q, query)
+	trimmedQuery := strings.TrimSpace(query)
+
+	if issueNumber, ok := parseIssueNumber(trimmedQuery); ok {
+		issue, err := g.getIssueByNumber(ctx, apiBase, owner, repo, issueNumber, tok.AccessToken)
+		if err != nil {
+			return nil, err
+		}
+		if issue.PullRequest != nil {
+			return []domain.Task{}, nil
+		}
+		return []domain.Task{toDomainTask(issue)}, nil
 	}
+
+	if trimmedQuery == "" {
+		issues, err := g.listRepoIssues(ctx, apiBase, owner, repo, tok.AccessToken)
+		if err != nil {
+			return nil, err
+		}
+		return toDomainTasks(issues), nil
+	}
+
+	q := []string{"repo:" + cfg.ProjectKey, "is:issue"}
+	q = append(q, trimmedQuery)
 
 	u, err := url.Parse(apiBase + "/search/issues")
 	if err != nil {
@@ -55,7 +93,7 @@ func (g *GithubClient) SearchTasks(ctx context.Context, cfg config.ProviderConfi
 	}
 	vals := u.Query()
 	vals.Set("q", strings.Join(q, " "))
-	vals.Set("per_page", "20")
+	vals.Set("per_page", "100")
 	u.RawQuery = vals.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -82,15 +120,166 @@ func (g *GithubClient) SearchTasks(ctx context.Context, cfg config.ProviderConfi
 
 	out := make([]domain.Task, 0, len(body.Items))
 	for _, item := range body.Items {
-		out = append(out, domain.Task{
-			Key:      "#" + strconv.Itoa(item.Number),
-			Title:    item.Title,
-			Epic:     "",
-			Status:   item.State,
-			Provider: "github",
-		})
+		issue := githubIssue{
+			Number: item.Number,
+			Title:  item.Title,
+			State:  item.State,
+		}
+		details, detailsErr := g.getIssueByNumber(ctx, apiBase, owner, repo, item.Number, tok.AccessToken)
+		if detailsErr == nil {
+			issue = details
+		}
+		out = append(out, toDomainTask(issue))
 	}
 	return out, nil
+}
+
+func (g *GithubClient) listRepoIssues(ctx context.Context, apiBase, owner, repo, token string) ([]githubIssue, error) {
+	u, err := url.Parse(apiBase + "/repos/" + owner + "/" + repo + "/issues")
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("state", "all")
+	q.Set("sort", "updated")
+	q.Set("direction", "desc")
+	q.Set("per_page", "100")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github issue list failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("github issue list failed with status %s", resp.Status)
+	}
+
+	var body []githubIssue
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+func (g *GithubClient) getIssueByNumber(ctx context.Context, apiBase, owner, repo string, number int, token string) (githubIssue, error) {
+	u := fmt.Sprintf("%s/repos/%s/%s/issues/%d", apiBase, owner, repo, number)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return githubIssue{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return githubIssue{}, fmt.Errorf("github issue lookup failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return githubIssue{}, fmt.Errorf("github issue lookup failed with status %s", resp.Status)
+	}
+
+	var issue githubIssue
+	if err := json.NewDecoder(resp.Body).Decode(&issue); err != nil {
+		return githubIssue{}, err
+	}
+	return issue, nil
+}
+
+func splitRepoKey(projectKey string) (string, string, error) {
+	parts := strings.Split(strings.TrimSpace(projectKey), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", fmt.Errorf("github project is invalid: expected owner/repo, got '%s'", projectKey)
+	}
+	return parts[0], parts[1], nil
+}
+
+func parseIssueNumber(query string) (int, bool) {
+	if query == "" {
+		return 0, false
+	}
+	q := strings.TrimSpace(strings.TrimPrefix(query, "#"))
+	n, err := strconv.Atoi(q)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+func toDomainTask(issue githubIssue) domain.Task {
+	epic := parentIssueKey(issue)
+	return domain.Task{
+		Key:      "#" + strconv.Itoa(issue.Number),
+		Title:    issue.Title,
+		Epic:     epic,
+		Status:   issue.State,
+		Provider: "github",
+	}
+}
+
+func toDomainTasks(issues []githubIssue) []domain.Task {
+	out := make([]domain.Task, 0, len(issues))
+	for _, issue := range issues {
+		if issue.PullRequest != nil {
+			continue
+		}
+		out = append(out, toDomainTask(issue))
+	}
+	return out
+}
+
+func parentIssueKey(issue githubIssue) string {
+	if issue.ParentIssue.Number > 0 {
+		return "#" + strconv.Itoa(issue.ParentIssue.Number)
+	}
+	if n := parseIssueNumberFromURL(issue.ParentIssueURL); n > 0 {
+		return "#" + strconv.Itoa(n)
+	}
+	if n := parseParentFromBody(issue.Body); n > 0 {
+		return "#" + strconv.Itoa(n)
+	}
+	return ""
+}
+
+func parseIssueNumberFromURL(raw string) int {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	parts := strings.Split(strings.TrimSuffix(strings.TrimSpace(raw), "/"), "/")
+	if len(parts) == 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+func parseParentFromBody(body string) int {
+	if strings.TrimSpace(body) == "" {
+		return 0
+	}
+	re := regexp.MustCompile(`(?i)(?:parent\s*[:#-]?\s*#|epic\s*[:#-]?\s*#)(\d+)`)
+	m := re.FindStringSubmatch(body)
+	if len(m) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }
 
 func (g *GithubClient) IsClosedTask(task domain.Task) bool {

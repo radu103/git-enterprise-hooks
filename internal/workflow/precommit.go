@@ -18,6 +18,11 @@ import (
 )
 
 func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPath string) error {
+	if shouldSkipValidation() {
+		fmt.Println("git-enterprise-hooks: non-interactive commit mode detected; skipping hook validations.")
+		return nil
+	}
+
 	if !providerConfigComplete(cfg) {
 		if !isInteractiveSession() {
 			return fmt.Errorf("provider setup is incomplete for non-interactive commit. Run 'git-enterprise-hooks setup' first, or set required provider values in git-enterprise-hooks.yaml/.env")
@@ -48,35 +53,38 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 	}
 	tasks, err := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, query)
 	if err != nil {
-		return err
+		fmt.Printf("Task lookup failed for provider '%s': %v\n", cfg.Rules.Provider.Type, err)
+		fmt.Println("Continuing with placeholder values: task_key=NONE, task_title=NONE, task_epic=NONE.")
+		tasks = nil
 	}
 	if cfg.Rules.RejectClosed {
 		tasks = filterOpenTasks(cli, tasks)
 	}
 
-	if len(tasks) == 0 && !isInteractiveSession() {
-		fallbackTask, fallbackErr := nonInteractiveFallbackTask(repoRoot, cfg, query)
-		if fallbackErr == nil {
-			tasks = append(tasks, fallbackTask)
+	skipBranchValidation := false
+	var selected *domain.Task
+
+	if len(tasks) == 0 {
+		skipBranchValidation = true
+		selected = &domain.Task{
+			Key:      "NONE",
+			Title:    "NONE",
+			Epic:     "NONE",
+			Status:   "NONE",
+			Provider: cfg.Rules.Provider.Type,
+		}
+		fmt.Println("No tasks found. Continuing with placeholder values: task_key=NONE, task_title=NONE, task_epic=NONE.")
+	} else {
+		selected, err = ui.SelectTask(tasks)
+		if err != nil {
+			return err
+		}
+		if selected == nil {
+			return fmt.Errorf("task selection canceled")
 		}
 	}
 
-	if cfg.Rules.VerifyTaskExists && len(tasks) == 0 {
-		return fmt.Errorf("no matching tasks found")
-	}
-	if len(tasks) == 0 {
-		return fmt.Errorf("no tasks available for selection")
-	}
-
-	selected, err := ui.SelectTask(tasks)
-	if err != nil {
-		return err
-	}
-	if selected == nil {
-		return fmt.Errorf("task selection canceled")
-	}
-
-	if strings.TrimSpace(cfg.Rules.VerifyBranchName) != "" {
+	if !skipBranchValidation && strings.TrimSpace(cfg.Rules.VerifyBranchName) != "" {
 		branch, err := gitutil.CurrentBranch(repoRoot)
 		if err != nil {
 			return err
@@ -108,9 +116,16 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 	if err := os.WriteFile(outPath, []byte(msg), 0o644); err != nil {
 		return err
 	}
+	commitMsgPath, err := gitutil.GitPath(repoRoot, "COMMIT_EDITMSG")
+	if err == nil {
+		_ = os.WriteFile(commitMsgPath, []byte(msg), 0o644)
+	}
 	fmt.Println("--- git-enterprise-hooks commit message ---")
 	fmt.Println(msg)
 	fmt.Printf("\nSaved to %s\n", outPath)
+	if err == nil {
+		fmt.Printf("Prepared commit message editor file: %s\n", commitMsgPath)
+	}
 	return nil
 }
 
@@ -343,6 +358,15 @@ func validateBranch(pattern, branch, taskKey string) error {
 
 func isInteractiveSession() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+func shouldSkipValidation() bool {
+	// Skip only for VS Code SCM non-interactive commits.
+	if strings.TrimSpace(os.Getenv("VSCODE_GIT_IPC_HANDLE")) != "" && !isInteractiveSession() {
+		return true
+	}
+
+	return false
 }
 
 func nonInteractiveFallbackTask(repoRoot string, cfg config.Config, query string) (domain.Task, error) {

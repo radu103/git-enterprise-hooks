@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/radu103/git-enterprise-hooks/internal/config"
 	"github.com/radu103/git-enterprise-hooks/internal/gitutil"
@@ -16,10 +17,12 @@ var disableCmd = &cobra.Command{
 	Use:   "disable",
 	Short: "Disable enterprise hook",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ok, err := ui.Confirm("Disable hook")
+		answer, err := ui.Ask("Disable hook (yes/no)", "yes")
 		if err != nil {
 			return err
 		}
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		ok := answer == "yes" || answer == "y"
 		if !ok {
 			fmt.Println("Aborted.")
 			return nil
@@ -36,7 +39,7 @@ var disableCmd = &cobra.Command{
 			return err
 		}
 
-		deleteConfig, err := ui.Confirm("Delete config file too")
+		deleteConfig, err := ui.Confirm("Delete config file too (default: no)")
 		if err != nil {
 			return err
 		}
@@ -46,6 +49,8 @@ var disableCmd = &cobra.Command{
 				return fmt.Errorf("delete config file: %w", err)
 			}
 			fmt.Printf("Deleted config: %s\n", cfgPath)
+		} else {
+			fmt.Println("Config file kept.")
 		}
 
 		fmt.Println("Cleanup complete.")
