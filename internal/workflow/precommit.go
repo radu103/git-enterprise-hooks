@@ -48,9 +48,21 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		return err
 	}
 
-	query, err := ui.Ask("Search task by key or title", "")
-	if err != nil {
-		return err
+	interactive := isInteractiveSession()
+	query := ""
+	if interactive {
+		query, err = ui.Ask("Search task by key or title", "")
+		if err != nil {
+			return err
+		}
+	} else {
+		branch, branchErr := gitutil.CurrentBranch(repoRoot)
+		if branchErr == nil {
+			query = extractTaskKeyFromBranch(cfg.Rules.VerifyBranchName, branch)
+		}
+		if strings.TrimSpace(query) != "" {
+			fmt.Printf("Non-interactive mode: using task key inferred from branch: %s\n", query)
+		}
 	}
 	tasks, err := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, query)
 	if err != nil {
@@ -396,8 +408,10 @@ func isInteractiveSession() bool {
 }
 
 func shouldSkipValidation() bool {
-	// Skip only for VS Code SCM non-interactive commits.
-	if strings.TrimSpace(os.Getenv("VSCODE_GIT_IPC_HANDLE")) != "" && !isInteractiveSession() {
+	// Skip only for VS Code SCM non-interactive commits, not for integrated terminal runs.
+	if strings.TrimSpace(os.Getenv("VSCODE_GIT_IPC_HANDLE")) != "" &&
+		!strings.EqualFold(strings.TrimSpace(os.Getenv("TERM_PROGRAM")), "vscode") &&
+		!isInteractiveSession() {
 		return true
 	}
 

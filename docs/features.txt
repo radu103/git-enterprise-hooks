@@ -48,7 +48,7 @@ Pre-Commit Runtime Flow
      - no task: use placeholder values and skip branch validation
      - one task: auto-select and print selection message
      - multiple tasks in TTY: interactive chooser
-     - multiple tasks in non-TTY: auto-select first task
+    - multiple tasks in non-TTY: fail with explicit selection guidance
 5. Enforce branch pattern if `rules.verify_branch_name` is configured.
 6. Ask commit summary and optional task-title override.
 7. Render commit message template and write to:

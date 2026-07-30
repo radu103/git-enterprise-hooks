@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/radu103/git-enterprise-hooks/internal/domain"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"golang.org/x/term"
 )
 
@@ -68,8 +69,7 @@ func SelectTask(tasks []domain.Task) (*domain.Task, error) {
 	}
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
-		selected := tasks[0]
-		return &selected, nil
+		return nil, fmt.Errorf(errs.TaskSelectionRequiresInteractive)
 	}
 
 	items := make([]list.Item, 0, len(tasks))
