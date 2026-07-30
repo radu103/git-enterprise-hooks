@@ -31,7 +31,7 @@ foreach ($target in $targets) {
     $osFolder = Join-Path $releaseDir $target.Goos
     New-Item -ItemType Directory -Force -Path $osFolder | Out-Null
 
-    $binaryName = "git-enterprise-hooks-$($target.Goarch)$($target.Ext)"
+    $binaryName = "git-enterprise-hooks-$($target.Goos)-$($target.Goarch)$($target.Ext)"
     $outputPath = Join-Path $osFolder $binaryName
 
     Write-Host "Building $($target.Goos)/$($target.Goarch) -> $outputPath"
@@ -47,11 +47,17 @@ Remove-Item Env:GOOS -ErrorAction SilentlyContinue
 Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
 Remove-Item Env:CGO_ENABLED -ErrorAction SilentlyContinue
 
-$windowsBinary = Join-Path $releaseDir "windows\git-enterprise-hooks-amd64.exe"
+$windowsExeName = "git-enterprise-hooks-windows-amd64.exe"
+$windowsBinary = Join-Path $releaseDir "windows\$windowsExeName"
 if (Test-Path $windowsBinary) {
+    $legacyZip = Join-Path $releaseDir "windows\git-enterprise-hooks-windows-amd64.zip"
+    if (Test-Path $legacyZip) {
+        Remove-Item -Force $legacyZip
+    }
+
     $hash = (Get-FileHash -Algorithm SHA256 -Path $windowsBinary).Hash.ToLower()
     $scoopManifestPath = Join-Path $releaseDir "windows\git-enterprise-hooks.json"
-    $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/v$version/git-enterprise-hooks-amd64.exe"
+    $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/v$version/$windowsExeName"
 
     $manifest = [ordered]@{
         version     = $version
@@ -64,11 +70,11 @@ if (Test-Path $windowsBinary) {
                 hash = $hash
             }
         }
-        bin = @("git-enterprise-hooks-amd64.exe")
+        bin = @($windowsExeName)
         autoupdate = [ordered]@{
             architecture = [ordered]@{
                 "64bit" = [ordered]@{
-                    url = "https://github.com/$repoOwner/$repoName/releases/download/v`$version/git-enterprise-hooks-amd64.exe"
+                    url = "https://github.com/$repoOwner/$repoName/releases/download/v`$version/$windowsExeName"
                 }
             }
         }
