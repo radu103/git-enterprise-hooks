@@ -14,8 +14,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "git-enterprise-hooks",
-	Short: "Enterprise commit hook assistant",
+	Use:           "git-enterprise-hooks",
+	Short:         "Enterprise commit hook assistant",
+	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return loadDotEnvFiles()
 	},

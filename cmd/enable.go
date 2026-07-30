@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/radu103/git-enterprise-hooks/internal/config"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"github.com/radu103/git-enterprise-hooks/internal/gitutil"
 	"github.com/radu103/git-enterprise-hooks/internal/hooks"
 	"github.com/radu103/git-enterprise-hooks/internal/ui"
@@ -36,7 +37,7 @@ var enableCmd = &cobra.Command{
 
 		providerType := normalizeProviderType(providerTypeInput)
 		if providerType == "" {
-			return fmt.Errorf("unsupported provider type '%s' (allowed: jira, azure_devops, github)", providerTypeInput)
+			return fmt.Errorf(errs.FmtUnsupportedProviderTypeAllowed, providerTypeInput)
 		}
 
 		cfg.Rules.Provider.Type = providerType

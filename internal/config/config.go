@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"github.com/spf13/viper"
 )
 
@@ -95,12 +96,12 @@ func LoadOrCreate(repoRoot, explicitPath string) (Config, string, error) {
 	v := viper.New()
 	v.SetConfigFile(cfgPath)
 	if err := v.ReadInConfig(); err != nil {
-		return Config{}, "", fmt.Errorf("read config: %w", err)
+		return Config{}, "", fmt.Errorf(errs.FmtReadConfig, err)
 	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		return Config{}, "", fmt.Errorf("parse config: %w", err)
+		return Config{}, "", fmt.Errorf(errs.FmtParseConfig, err)
 	}
 	cfg.normalizeProviders(true)
 	if err := cfg.Validate(); err != nil {
@@ -137,27 +138,27 @@ func Save(path string, cfg Config) error {
 	v.Set("rules.reject_closed_tasks", cfg.Rules.RejectClosed)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create config folder: %w", err)
+		return fmt.Errorf(errs.FmtCreateConfigFolder, err)
 	}
 	v.SetConfigFile(path)
 	if _, err := os.Stat(path); err == nil {
 		if err := v.WriteConfig(); err != nil {
-			return fmt.Errorf("update config: %w", err)
+			return fmt.Errorf(errs.FmtUpdateConfig, err)
 		}
 		return nil
 	}
 	if err := v.WriteConfigAs(path); err != nil {
-		return fmt.Errorf("write config: %w", err)
+		return fmt.Errorf(errs.FmtWriteConfig, err)
 	}
 	return nil
 }
 
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Message) == "" {
-		return errors.New("config message cannot be empty")
+		return errors.New(errs.ConfigMessageCannotBeEmpty)
 	}
 	if strings.TrimSpace(c.Rules.Provider.Type) == "" {
-		return errors.New("provider type cannot be empty")
+		return errors.New(errs.ProviderTypeCannotBeEmpty)
 	}
 	return nil
 }

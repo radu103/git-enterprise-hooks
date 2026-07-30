@@ -11,6 +11,7 @@ import (
 	"github.com/radu103/git-enterprise-hooks/internal/commit"
 	"github.com/radu103/git-enterprise-hooks/internal/config"
 	"github.com/radu103/git-enterprise-hooks/internal/domain"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"github.com/radu103/git-enterprise-hooks/internal/gitutil"
 	"github.com/radu103/git-enterprise-hooks/internal/provider"
 	"github.com/radu103/git-enterprise-hooks/internal/ui"
@@ -25,7 +26,7 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 
 	if !providerConfigComplete(cfg) {
 		if !isInteractiveSession() {
-			return fmt.Errorf("provider setup is incomplete for non-interactive commit. Run 'git-enterprise-hooks setup' first, or set required provider values in git-enterprise-hooks.yaml/.env")
+			return fmt.Errorf(errs.ProviderSetupIncompleteNonInteractive)
 		}
 		if err := SetupProviderConfig(&cfg); err != nil {
 			return err
@@ -80,7 +81,7 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 			return err
 		}
 		if selected == nil {
-			return fmt.Errorf("task selection canceled")
+			return fmt.Errorf(errs.TaskSelectionCanceled)
 		}
 	}
 
@@ -89,7 +90,8 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		if err != nil {
 			return err
 		}
-		if err := validateBranch(cfg.Rules.VerifyBranchName, branch, selected.Key); err != nil {
+		branchTaskKey := normalizeTaskKeyForBranch(selected.Key)
+		if err := validateBranch(cfg.Rules.VerifyBranchName, branch, branchTaskKey); err != nil {
 			return err
 		}
 	}
@@ -109,7 +111,7 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		Summary:   summary,
 	})
 	if strings.TrimSpace(msg) == "" {
-		return fmt.Errorf("formatted commit message is empty")
+		return fmt.Errorf(errs.FormattedCommitMessageEmpty)
 	}
 
 	outPath := filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt")
@@ -240,19 +242,19 @@ func authTokenFromConfig(cfg config.Config) (domain.AuthToken, error) {
 	case "github":
 		pat := githubToken(cfg)
 		if strings.TrimSpace(pat) == "" {
-			return domain.AuthToken{}, fmt.Errorf("missing github token: set provider_github.github_pat or GITHUB_TOKEN")
+			return domain.AuthToken{}, fmt.Errorf(errs.MissingGithubToken)
 		}
 		return domain.AuthToken{AccessToken: pat, TokenType: "Bearer"}, nil
 	case "azure_devops", "azure-devops", "devops":
 		pat := azureDevOpsToken(cfg)
 		if strings.TrimSpace(pat) == "" {
-			return domain.AuthToken{}, fmt.Errorf("missing azure devops token: set provider_azure_devops.personal_access_token or AZURE_DEVOPS_PAT")
+			return domain.AuthToken{}, fmt.Errorf(errs.MissingAzureDevOpsToken)
 		}
 		return domain.AuthToken{AccessToken: pat, TokenType: "Bearer"}, nil
 	default:
 		tok := jiraToken(cfg)
 		if strings.TrimSpace(tok) == "" {
-			return domain.AuthToken{}, fmt.Errorf("missing jira token: set provider_jira.jira_api_token or JIRA_API_TOKEN")
+			return domain.AuthToken{}, fmt.Errorf(errs.MissingJiraToken)
 		}
 		return domain.AuthToken{AccessToken: tok, TokenType: "Bearer"}, nil
 	}
@@ -341,6 +343,10 @@ func filterOpenTasks(cli provider.Client, tasks []domain.Task) []domain.Task {
 	return out
 }
 
+func normalizeTaskKeyForBranch(taskKey string) string {
+	return strings.TrimPrefix(strings.TrimSpace(taskKey), "#")
+}
+
 func validateBranch(pattern, branch, taskKey string) error {
 	raw := strings.ReplaceAll(pattern, "{task_key}", taskKey)
 	regex := regexp.QuoteMeta(raw)
@@ -348,10 +354,10 @@ func validateBranch(pattern, branch, taskKey string) error {
 	regex = "^" + regex + "$"
 	ok, err := regexp.MatchString(regex, branch)
 	if err != nil {
-		return fmt.Errorf("invalid branch pattern: %w", err)
+		return fmt.Errorf(errs.FmtInvalidBranchPattern, err)
 	}
 	if !ok {
-		return fmt.Errorf("invalid branch name '%s': branch does not follow required naming pattern '%s'. Rename your branch to include a valid task key (example: feature/ABC-123-short-description)", branch, raw)
+		return fmt.Errorf(errs.FmtInvalidBranchName, branch, raw)
 	}
 	return nil
 }

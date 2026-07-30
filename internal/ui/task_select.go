@@ -63,6 +63,7 @@ func SelectTask(tasks []domain.Task) (*domain.Task, error) {
 
 	if len(tasks) == 1 {
 		selected := tasks[0]
+		fmt.Printf("Auto-selected task: %s - %s\n", selected.Key, selected.Title)
 		return &selected, nil
 	}
 

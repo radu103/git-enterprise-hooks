@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/radu103/git-enterprise-hooks/internal/config"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"github.com/radu103/git-enterprise-hooks/internal/gitutil"
 	"github.com/radu103/git-enterprise-hooks/internal/hooks"
 	"github.com/radu103/git-enterprise-hooks/internal/ui"
@@ -46,7 +47,7 @@ var disableCmd = &cobra.Command{
 		if deleteConfig {
 			cfgPath := config.ResolvePath(repoRoot, configPath)
 			if err := os.Remove(cfgPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("delete config file: %w", err)
+				return fmt.Errorf(errs.FmtDeleteConfigFile, err)
 			}
 			fmt.Printf("Deleted config: %s\n", cfgPath)
 		} else {

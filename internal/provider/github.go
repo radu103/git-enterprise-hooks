@@ -12,6 +12,7 @@ import (
 
 	"github.com/radu103/git-enterprise-hooks/internal/config"
 	"github.com/radu103/git-enterprise-hooks/internal/domain"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 )
 
 type GithubClient struct{}
@@ -39,23 +40,23 @@ type githubIssue struct {
 }
 
 func (g *GithubClient) Authenticate(ctx context.Context, cfg config.ProviderConfig, username, password string) (domain.AuthToken, error) {
-	return domain.AuthToken{}, fmt.Errorf("github authentication is PAT-based: set provider_github.github_pat or GITHUB_TOKEN")
+	return domain.AuthToken{}, fmt.Errorf(errs.GithubAuthenticationPATBased)
 }
 
 func (g *GithubClient) RefreshToken(ctx context.Context, cfg config.ProviderConfig, tok domain.AuthToken) (domain.AuthToken, error) {
 	// GitHub PATs are managed outside this tool and do not support refresh.
 	if strings.TrimSpace(tok.AccessToken) == "" {
-		return domain.AuthToken{}, fmt.Errorf("github token is empty")
+		return domain.AuthToken{}, fmt.Errorf(errs.GithubTokenIsEmpty)
 	}
 	return tok, nil
 }
 
 func (g *GithubClient) SearchTasks(ctx context.Context, cfg config.ProviderConfig, tok domain.AuthToken, query string) ([]domain.Task, error) {
 	if strings.TrimSpace(tok.AccessToken) == "" {
-		return nil, fmt.Errorf("github token is empty")
+		return nil, fmt.Errorf(errs.GithubTokenIsEmpty)
 	}
 	if strings.TrimSpace(cfg.ProjectKey) == "" {
-		return nil, fmt.Errorf("github project is missing (expected owner/repo)")
+		return nil, fmt.Errorf(errs.GithubProjectMissing)
 	}
 	owner, repo, err := splitRepoKey(cfg.ProjectKey)
 	if err != nil {
@@ -106,11 +107,11 @@ func (g *GithubClient) SearchTasks(ctx context.Context, cfg config.ProviderConfi
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("github search failed: %w", err)
+		return nil, fmt.Errorf(errs.FmtGithubSearchFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("github search failed with status %s", resp.Status)
+		return nil, fmt.Errorf(errs.FmtGithubSearchFailedWithStatus, resp.Status)
 	}
 
 	var body githubSearchResponse
@@ -156,11 +157,11 @@ func (g *GithubClient) listRepoIssues(ctx context.Context, apiBase, owner, repo,
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("github issue list failed: %w", err)
+		return nil, fmt.Errorf(errs.FmtGithubIssueListFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("github issue list failed with status %s", resp.Status)
+		return nil, fmt.Errorf(errs.FmtGithubIssueListFailedStatus, resp.Status)
 	}
 
 	var body []githubIssue
@@ -182,11 +183,11 @@ func (g *GithubClient) getIssueByNumber(ctx context.Context, apiBase, owner, rep
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return githubIssue{}, fmt.Errorf("github issue lookup failed: %w", err)
+		return githubIssue{}, fmt.Errorf(errs.FmtGithubIssueLookupFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return githubIssue{}, fmt.Errorf("github issue lookup failed with status %s", resp.Status)
+		return githubIssue{}, fmt.Errorf(errs.FmtGithubIssueLookupFailedStatus, resp.Status)
 	}
 
 	var issue githubIssue
@@ -199,7 +200,7 @@ func (g *GithubClient) getIssueByNumber(ctx context.Context, apiBase, owner, rep
 func splitRepoKey(projectKey string) (string, string, error) {
 	parts := strings.Split(strings.TrimSpace(projectKey), "/")
 	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return "", "", fmt.Errorf("github project is invalid: expected owner/repo, got '%s'", projectKey)
+		return "", "", fmt.Errorf(errs.FmtGithubProjectInvalid, projectKey)
 	}
 	return parts[0], parts[1], nil
 }

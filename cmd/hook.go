@@ -11,21 +11,24 @@ import (
 )
 
 var hookCmd = &cobra.Command{
-	Use:   "hook",
-	Short: "Hook runtime commands",
-	RunE:  runHookFlow,
+	Use:          "hook",
+	Short:        "Hook runtime commands",
+	SilenceUsage: true,
+	RunE:         runHookFlow,
 }
 
 var hookPreCommitCmd = &cobra.Command{
-	Use:   "hook_precommit",
-	Short: "Run pre-commit hook flow",
-	RunE:  runHookFlow,
+	Use:          "hook_precommit",
+	Short:        "Run pre-commit hook flow",
+	SilenceUsage: true,
+	RunE:         runHookFlow,
 }
 
 var hookRunCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run pre-commit flow",
-	RunE:  runHookFlow,
+	Use:          "run",
+	Short:        "Run pre-commit flow",
+	SilenceUsage: true,
+	RunE:         runHookFlow,
 }
 
 func runHookFlow(cmd *cobra.Command, args []string) error {

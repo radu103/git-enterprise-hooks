@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 )
 
 func FindRepoRoot(start string) (string, error) {
@@ -19,7 +20,7 @@ func FindRepoRoot(start string) (string, error) {
 		}
 		next := filepath.Dir(cur)
 		if next == cur {
-			return "", errors.New("not inside a git repository")
+			return "", errors.New(errs.NotInsideGitRepository)
 		}
 		cur = next
 	}
@@ -29,7 +30,7 @@ func CurrentBranch(repoRoot string) (string, error) {
 	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("get current branch: %w", err)
+		return "", fmt.Errorf(errs.FmtGetCurrentBranch, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -38,7 +39,7 @@ func HooksDir(repoRoot string) (string, error) {
 	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-path", "hooks")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("resolve hooks path: %w", err)
+		return "", fmt.Errorf(errs.FmtResolveHooksPath, err)
 	}
 	hooks := strings.TrimSpace(string(out))
 	if filepath.IsAbs(hooks) {
@@ -51,7 +52,7 @@ func GitPath(repoRoot, rel string) (string, error) {
 	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-path", rel)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("resolve git path '%s': %w", rel, err)
+		return "", fmt.Errorf(errs.FmtResolveGitPath, rel, err)
 	}
 	resolved := strings.TrimSpace(string(out))
 	if filepath.IsAbs(resolved) {

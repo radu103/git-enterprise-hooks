@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 	"github.com/radu103/git-enterprise-hooks/internal/gitutil"
 )
 
@@ -35,7 +36,7 @@ func Enable(repoRoot string) error {
 	}, "\n") + "\n"
 
 	if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
-		return fmt.Errorf("write pre-commit hook: %w", err)
+		return fmt.Errorf(errs.FmtWritePreCommitHook, err)
 	}
 
 	return nil
@@ -60,7 +61,7 @@ func removeHookScript(repoRoot string) error {
 		return nil
 	}
 	if err := os.Remove(hookPath); err != nil {
-		return fmt.Errorf("remove pre-commit hook: %w", err)
+		return fmt.Errorf(errs.FmtRemovePreCommitHook, err)
 	}
 	return nil
 }

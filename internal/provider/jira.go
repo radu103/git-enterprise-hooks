@@ -11,6 +11,7 @@ import (
 
 	"github.com/radu103/git-enterprise-hooks/internal/config"
 	"github.com/radu103/git-enterprise-hooks/internal/domain"
+	"github.com/radu103/git-enterprise-hooks/internal/errs"
 )
 
 type JiraClient struct{}
@@ -60,7 +61,7 @@ func (j *JiraClient) Authenticate(ctx context.Context, cfg config.ProviderConfig
 
 func (j *JiraClient) RefreshToken(ctx context.Context, cfg config.ProviderConfig, tok domain.AuthToken) (domain.AuthToken, error) {
 	if strings.TrimSpace(tok.RefreshToken) == "" {
-		return domain.AuthToken{}, fmt.Errorf("refresh token missing")
+		return domain.AuthToken{}, fmt.Errorf(errs.RefreshTokenMissing)
 	}
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
@@ -106,11 +107,11 @@ func (j *JiraClient) SearchTasks(ctx context.Context, cfg config.ProviderConfig,
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("jira search failed: %w", err)
+		return nil, fmt.Errorf(errs.FmtJiraSearchFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("jira search failed with status %s", resp.Status)
+		return nil, fmt.Errorf(errs.FmtJiraSearchFailedWithStatus, resp.Status)
 	}
 
 	var body jiraSearchResponse
@@ -149,11 +150,11 @@ func postForm(ctx context.Context, endpoint string, form url.Values, out any) er
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("oauth request failed: %w", err)
+		return fmt.Errorf(errs.FmtOAuthRequestFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("oauth request failed with status %s", resp.Status)
+		return fmt.Errorf(errs.FmtOAuthRequestFailedStatus, resp.Status)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
