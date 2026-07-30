@@ -16,7 +16,7 @@ import (
 
 var disableCmd = &cobra.Command{
 	Use:   "disable",
-	Short: "Disable enterprise hook",
+	Short: "Disable enterprise hooks (pre-commit, prepare-commit-msg)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		answer, err := ui.Ask("Disable hook (yes/no)", "yes")
 		if err != nil {

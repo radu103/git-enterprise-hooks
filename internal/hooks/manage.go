@@ -21,8 +21,8 @@ func Enable(repoRoot string) error {
 		return err
 	}
 
-	hookPath := filepath.Join(hooksDir, "pre-commit")
-	script := strings.Join([]string{
+	preCommitPath := filepath.Join(hooksDir, "pre-commit")
+	preCommitScript := strings.Join([]string{
 		"#!/bin/sh",
 		marker,
 		"if [ -f \"go.mod\" ] && command -v go >/dev/null 2>&1; then",
@@ -35,7 +35,22 @@ func Enable(repoRoot string) error {
 		"fi",
 	}, "\n") + "\n"
 
-	if err := os.WriteFile(hookPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(preCommitPath, []byte(preCommitScript), 0o755); err != nil {
+		return fmt.Errorf(errs.FmtWritePreCommitHook, err)
+	}
+
+	prepareCommitMsgPath := filepath.Join(hooksDir, "prepare-commit-msg")
+	prepareCommitMsgScript := strings.Join([]string{
+		"#!/bin/sh",
+		marker,
+		"MSG_FILE=\"$1\"",
+		"HOOK_MSG_FILE=$(git rev-parse --git-path git-enterprise-hooks-message.txt 2>/dev/null)",
+		"if [ -n \"$MSG_FILE\" ] && [ -n \"$HOOK_MSG_FILE\" ] && [ -s \"$HOOK_MSG_FILE\" ]; then",
+		"  cp \"$HOOK_MSG_FILE\" \"$MSG_FILE\"",
+		"fi",
+	}, "\n") + "\n"
+
+	if err := os.WriteFile(prepareCommitMsgPath, []byte(prepareCommitMsgScript), 0o755); err != nil {
 		return fmt.Errorf(errs.FmtWritePreCommitHook, err)
 	}
 
@@ -43,16 +58,21 @@ func Enable(repoRoot string) error {
 }
 
 func Disable(repoRoot string) error {
-	_ = removeHookScript(repoRoot)
+	if err := removeManagedHook(repoRoot, "pre-commit"); err != nil {
+		return err
+	}
+	if err := removeManagedHook(repoRoot, "prepare-commit-msg"); err != nil {
+		return err
+	}
 	return nil
 }
 
-func removeHookScript(repoRoot string) error {
+func removeManagedHook(repoRoot, hookName string) error {
 	hooksDir, err := gitutil.HooksDir(repoRoot)
 	if err != nil {
 		return err
 	}
-	hookPath := filepath.Join(hooksDir, "pre-commit")
+	hookPath := filepath.Join(hooksDir, hookName)
 	b, err := os.ReadFile(hookPath)
 	if err != nil {
 		return nil
