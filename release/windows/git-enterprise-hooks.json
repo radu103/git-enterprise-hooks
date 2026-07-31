@@ -1,12 +1,12 @@
 {
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "CLI helper that installs a pre-commit hook and guides task-based commit message creation.",
   "homepage": "https://github.com/radu103/git-enterprise-hooks",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/radu103/git-enterprise-hooks/releases/download/v0.0.1/git-enterprise-hooks-windows-amd64.exe",
-      "hash": "f6979d7d7746971742add9f19998133b507884412408e6f205b321ac259dd866"
+      "url": "https://github.com/radu103/git-enterprise-hooks/releases/download/v1.0.0/git-enterprise-hooks-windows-amd64.exe",
+      "hash": "8fc8eca4ef2eb373ab9fbcb8a7c0da0190352f5539ee6673acd6f0181a0ce7ab"
     }
   },
   "bin": [
