@@ -10,7 +10,7 @@
     }
   },
   "bin": [
-    "git-enterprise-hooks-windows-amd64.exe"
+    ["git-enterprise-hooks-windows-amd64.exe", "git-enterprise-hooks"]
   ],
   "autoupdate": {
     "architecture": {
