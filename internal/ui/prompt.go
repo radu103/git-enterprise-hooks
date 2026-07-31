@@ -5,17 +5,67 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 
 	"golang.org/x/term"
 )
 
+func CanPrompt() bool {
+	if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
+		return true
+	}
+	termIn, termOut := openTerminalIO()
+	if termIn == nil {
+		return false
+	}
+	_ = termIn.Close()
+	_ = termOut.Close()
+	return true
+}
+
+func openTerminalIO() (in *os.File, out *os.File) {
+	if runtime.GOOS == "windows" {
+		inFile, inErr := os.Open("CONIN$")
+		if inErr != nil {
+			return nil, nil
+		}
+		outFile, outErr := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
+		if outErr != nil {
+			_ = inFile.Close()
+			return nil, nil
+		}
+		return inFile, outFile
+	}
+
+	inFile, inErr := os.Open("/dev/tty")
+	if inErr != nil {
+		return nil, nil
+	}
+	outFile, outErr := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
+	if outErr != nil {
+		_ = inFile.Close()
+		return nil, nil
+	}
+	return inFile, outFile
+}
+
 func Ask(question, defaultValue string) (string, error) {
-	reader := bufio.NewReader(os.Stdin)
+	in := os.Stdin
+	out := os.Stdout
+	termIn, termOut := openTerminalIO()
+	if termIn != nil {
+		defer termIn.Close()
+		defer termOut.Close()
+		in = termIn
+		out = termOut
+	}
+
+	reader := bufio.NewReader(in)
 	if strings.TrimSpace(defaultValue) != "" {
-		fmt.Printf("%s [%s]: ", question, defaultValue)
+		_, _ = fmt.Fprintf(out, "%s [%s]: ", question, defaultValue)
 	} else {
-		fmt.Printf("%s: ", question)
+		_, _ = fmt.Fprintf(out, "%s: ", question)
 	}
 	line, err := reader.ReadString('\n')
 	if err != nil {
@@ -36,9 +86,19 @@ func Ask(question, defaultValue string) (string, error) {
 }
 
 func AskPassword(question string) (string, error) {
-	fmt.Printf("%s: ", question)
-	b, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println()
+	in := os.Stdin
+	out := os.Stdout
+	termIn, termOut := openTerminalIO()
+	if termIn != nil {
+		defer termIn.Close()
+		defer termOut.Close()
+		in = termIn
+		out = termOut
+	}
+
+	_, _ = fmt.Fprintf(out, "%s: ", question)
+	b, err := term.ReadPassword(int(in.Fd()))
+	_, _ = fmt.Fprintln(out)
 	if err != nil {
 		return "", err
 	}
