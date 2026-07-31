@@ -63,10 +63,41 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		}
 		if strings.TrimSpace(query) != "" {
 			fmt.Printf("Non-interactive mode: using task key inferred from branch: %s\n", query)
-			// validate inferred key looks like provider task key (e.g. ABC-123). If not, abort.
+			// validate inferred key looks like provider task key (e.g. ABC-123).
 			matched, _ := regexp.MatchString(`^[A-Za-z]+-[0-9]+$`, strings.TrimSpace(query))
 			if !matched {
-				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+				// If the inferred token doesn't look like a task key, try searching the provider for similar tasks.
+				fmt.Printf("Inferred token '%s' doesn't match task-key pattern; searching provider for similar tasks...\n", query)
+				suggestions, sErr := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, query)
+				var buf strings.Builder
+				buf.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for inferred token '%s'\n\n", query))
+				if sErr != nil {
+					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
+					fmt.Print(buf.String())
+					return nil
+				}
+				if len(suggestions) == 0 {
+					buf.WriteString("No similar tasks found.\n")
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
+					fmt.Print(buf.String())
+					return nil
+				}
+				if len(suggestions) == 1 {
+					// Auto-select the single matching suggestion and continue.
+					selected := suggestions[0]
+					fmt.Printf("Auto-selected task from suggestions: %s - %s\n", selected.Key, selected.Title)
+					// set query to the exact task key so the later lookup picks it
+					query = selected.Key
+				} else {
+					buf.WriteString(fmt.Sprintf("Found %d similar tasks:\n", len(suggestions)))
+					for _, t := range suggestions {
+						fmt.Fprintf(&buf, "- %s | %s | Epic: %s | Status: %s | Provider: %s\n", t.Key, t.Title, t.Epic, t.Status, t.Provider)
+					}
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
+					fmt.Print(buf.String())
+					return nil
+				}
 			}
 		}
 	}
@@ -75,6 +106,20 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		fmt.Printf("Task lookup failed for provider '%s': %v\n", cfg.Rules.Provider.Type, err)
 		fmt.Println("Continuing with placeholder values: task_key=NONE, task_title=NONE, task_epic=NONE.")
 		tasks = nil
+	}
+
+	// Log all tasks found so they are visible to the user in the commit editor and console.
+	if tasks != nil && len(tasks) > 0 {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for query '%s'\n\n", query))
+		sb.WriteString(fmt.Sprintf("Found %d tasks:\n", len(tasks)))
+		for _, t := range tasks {
+			sb.WriteString("- ")
+			sb.WriteString(fmt.Sprintf("%s | %s | Epic: %s | Status: %s | Provider: %s\n", t.Key, t.Title, t.Epic, t.Status, t.Provider))
+		}
+		// Persist the search results to the message file so prepare-commit-msg can show them.
+		_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(sb.String()), 0o644)
+		fmt.Print(sb.String())
 	}
 	if cfg.Rules.RejectClosed {
 		tasks = filterOpenTasks(cli, tasks)
@@ -90,13 +135,60 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		if err == nil {
 			branchTaskKey := extractTaskKeyFromBranch(cfg.Rules.VerifyBranchName, branch)
 			if strings.TrimSpace(branchTaskKey) == "" {
-				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+				// No task key in branch. Try to surface similar tasks from the provider and include project.
+				project := strings.TrimSpace(cfg.Rules.Provider.ProjectKey)
+				if project == "" {
+					project = strings.TrimSpace(cfg.Rules.Provider.TokenURL)
+				}
+				fmt.Printf("No task key inferred from branch '%s'. Searching for similar tasks in project '%s'...\n", branch, project)
+				suggestions, sErr := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, branch)
+				var buf strings.Builder
+				buf.WriteString("git-enterprise-hooks: commit aborted — no task key inferred from branch\n\n")
+				buf.WriteString(fmt.Sprintf("Branch: %s\nProject: %s\n\n", branch, project))
+				if sErr != nil {
+					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
+				} else if len(suggestions) == 0 {
+					buf.WriteString("No similar tasks found.\n")
+				} else {
+					buf.WriteString("Similar tasks:\n")
+					for _, t := range suggestions {
+						fmt.Fprintf(&buf, "- %s (%s) - %s\n", t.Key, project, t.Title)
+					}
+				}
+				// persist alert message so prepare-commit-msg can show it in the editor
+				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
+				fmt.Print(buf.String())
+				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
+				return nil
 			}
 			// If branch task key exists but doesn't look like a provider task key (e.g. JIRA 'ABC-123'), abort.
 			// This prevents committing when the branch contains a numeric placeholder like '1' that won't match tasks.
 			matched, _ := regexp.MatchString(`^[A-Za-z]+-[0-9]+$`, strings.TrimSpace(branchTaskKey))
 			if !matched {
-				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+				// Provide suggestions by searching with the raw branch as query
+				project := strings.TrimSpace(cfg.Rules.Provider.ProjectKey)
+				if project == "" {
+					project = strings.TrimSpace(cfg.Rules.Provider.TokenURL)
+				}
+				fmt.Printf("Inferred branch token '%s' does not match task-key pattern. Searching for similar tasks in project '%s'...\n", branchTaskKey, project)
+				suggestions, sErr := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, branchTaskKey)
+				var buf strings.Builder
+				buf.WriteString("git-enterprise-hooks: commit aborted — inferred branch token does not match expected task-key pattern\n\n")
+				buf.WriteString(fmt.Sprintf("Inferred token: %s\nProject: %s\n\n", branchTaskKey, project))
+				if sErr != nil {
+					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
+				} else if len(suggestions) == 0 {
+					buf.WriteString("No similar tasks found.\n")
+				} else {
+					buf.WriteString("Similar tasks:\n")
+					for _, t := range suggestions {
+						fmt.Fprintf(&buf, "- %s (%s) - %s\n", t.Key, project, t.Title)
+					}
+				}
+				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
+				fmt.Print(buf.String())
+				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
+				return nil
 			}
 		}
 
