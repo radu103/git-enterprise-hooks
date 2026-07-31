@@ -1,0 +1,16 @@
+format: conventional
+message: |-
+    [{task_key}] - {task_title}
+    Epic: {task_epic}
+
+    {summary} 
+provider_jira:
+    jira_api_token: ""
+    project: KAN
+    url: https://radu103.atlassian.net/
+    user_email: radu103@hotmail.com
+required: true
+rules:
+    reject_closed_tasks: true
+    verify_branch_name: feature/{task_key}-*
+    verify_task_exists: true

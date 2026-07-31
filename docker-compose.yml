@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:13
+    container_name: jira-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jiradbuser
+      POSTGRES_PASSWORD: jirapassword
+      POSTGRES_DB: jiradb
+    volumes:
+      - 'R:\\jira\\db:/var/lib/postgresql/data'
+    networks:
+      jira_net:
+        ipv4_address: 172.25.0.10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jiradbuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jira:
+    image: atlassian/jira-software
+    container_name: jira
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - 'R:\\jira\\data:/var/atlassian/application-data/jira'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - TZ=UTC
+    networks:
+      jira_net:
+        ipv4_address: 172.25.0.11
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@localhost.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - 'R:\\jira\\pgadmin:/var/lib/pgadmin'
+    depends_on:
+      - db
+    networks:
+      jira_net:
+        ipv4_address: 172.25.0.12
+
+networks:
+  jira_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+          gateway: 172.25.0.1
+
+# Using host bind mounts on Windows (R:) instead of named Docker volumes
