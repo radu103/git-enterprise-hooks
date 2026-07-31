@@ -59,13 +59,88 @@ var enableCmd = &cobra.Command{
 			return err
 		}
 		if setupNow {
-			fmt.Printf("Next: open %s and fill provider settings shown above.\n", cfgPath)
+			if err := promptAndSaveProviderValues(cfgPath, &cfg); err != nil {
+				return err
+			}
+			fmt.Printf("Saved provider settings to %s.\n", cfgPath)
 			fmt.Println("Then run: git commit")
 		} else {
 			fmt.Println("Next: set up provider config first (in config file or env vars), then run 'git commit'.")
 		}
 		return nil
 	},
+}
+
+func promptAndSaveProviderValues(cfgPath string, cfg *config.Config) error {
+	ptype := cfg.Rules.Provider.Type
+	switch ptype {
+	case "jira":
+		url, err := ui.Ask("Jira URL", cfg.ProviderJira.URL)
+		if err != nil {
+			return err
+		}
+		project, err := ui.Ask("Jira Project", cfg.ProviderJira.Project)
+		if err != nil {
+			return err
+		}
+		userEmail, err := ui.Ask("Jira user email", cfg.ProviderJira.UserEmail)
+		if err != nil {
+			return err
+		}
+		token, err := ui.AskPassword("Jira API token (leave empty to use env or existing)")
+		if err != nil {
+			return err
+		}
+		cfg.ProviderJira.URL = url
+		cfg.ProviderJira.Project = project
+		cfg.ProviderJira.UserEmail = userEmail
+		if strings.TrimSpace(token) != "" {
+			cfg.ProviderJira.JiraAPIToken = token
+		}
+	case "github":
+		url, err := ui.Ask("GitHub URL", cfg.ProviderGithub.URL)
+		if err != nil {
+			return err
+		}
+		project, err := ui.Ask("GitHub project", cfg.ProviderGithub.Project)
+		if err != nil {
+			return err
+		}
+		token, err := ui.AskPassword("GitHub PAT (leave empty to use env or existing)")
+		if err != nil {
+			return err
+		}
+		cfg.ProviderGithub.URL = url
+		cfg.ProviderGithub.Project = project
+		if strings.TrimSpace(token) != "" {
+			cfg.ProviderGithub.GithubPAT = token
+		}
+	case "azure_devops":
+		url, err := ui.Ask("Azure DevOps URL", cfg.ProviderAzureDevOps.URL)
+		if err != nil {
+			return err
+		}
+		project, err := ui.Ask("Azure DevOps project", cfg.ProviderAzureDevOps.Project)
+		if err != nil {
+			return err
+		}
+		token, err := ui.AskPassword("Azure DevOps PAT (leave empty to use env or existing)")
+		if err != nil {
+			return err
+		}
+		cfg.ProviderAzureDevOps.URL = url
+		cfg.ProviderAzureDevOps.Project = project
+		if strings.TrimSpace(token) != "" {
+			cfg.ProviderAzureDevOps.PersonalAccessToken = token
+		}
+	default:
+		// unknown provider; nothing to prompt
+	}
+
+	if err := config.Save(cfgPath, *cfg); err != nil {
+		return err
+	}
+	return nil
 }
 
 func init() {
