@@ -7,6 +7,21 @@ CLI helper that installs a pre-commit hook and guides task-based commit message 
 - Go 1.22+
 - Git
 
+## Install Windows
+
+```powershell
+scoop add bucket radu103 https://github.com/radu103/radu103-bucket
+scoop install git-enterprise-hooks
+```
+
+## Install MacOS with homebrew
+
+```zsh
+brew tap radu103/git-enterprise-hooks
+brew trust radu103/git-enterprise-hooks
+brew install git-enterprise-hooks
+```
+
 ## Build
 
 From the project root:
@@ -27,13 +42,27 @@ If PowerShell execution policy blocks scripts:
 powershell -ExecutionPolicy Bypass -File .\build-release.ps1
 ```
 
-### Release Command
+### Windows / Linux / MacOS Build And Homebrew Tap Publish
 
-1. Tag and push:
+1. Set the release version and build the artifact:
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+$env:RELEASE_VERSION = "1.0.1"
+pwsh ./build-release.ps1
+```
+
+```zsh
+set RELEASE_VERSION="1.0.1"
+go build -o release/darwin/git-enterprise-hooks-darwin-arm64
+tar -czvf git-enterprise-hooks-arm64.tar.gz git-enterprise-hooks-arm64
+```
+
+2. Update the Homebrew tap formula to point at the new GitHub release asset:
+
+```zsh
+go build -o release/darwin/git-enterprise-hooks
+cd release/darwin
+tar -czvf git-enterprise-hooks.tar.gz git-enterprise-hooks
 ```
 
 ## Enable In A Repository
