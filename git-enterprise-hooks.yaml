@@ -1,10 +1,9 @@
 format: conventional
 message: "[{task_key}] - {task_title}\nEpic: {task_epic}\n\n{summary}    "
-provider_jira:
-    jira_api_token: ""
-    project: KAN
-    url: https://radu103.atlassian.net/
-    user_email: radu103@hotmail.com
+provider_github:
+    github_pat: ""
+    project: radu103/git-enterprise-hooks
+    url: https://github.com/
 required: true
 rules:
     reject_closed_tasks: true
