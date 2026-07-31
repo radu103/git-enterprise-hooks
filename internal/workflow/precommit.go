@@ -16,7 +16,6 @@ import (
 	"github.com/radu103/git-enterprise-hooks/internal/gitutil"
 	"github.com/radu103/git-enterprise-hooks/internal/provider"
 	"github.com/radu103/git-enterprise-hooks/internal/ui"
-	"golang.org/x/term"
 )
 
 func commentizeContent(s string) string {
@@ -38,7 +37,7 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 	}
 
 	if !providerConfigComplete(cfg) {
-		if !isInteractiveSession() {
+		if !ui.CanPrompt() {
 			return fmt.Errorf(errs.ProviderSetupIncompleteNonInteractive)
 		}
 		if err := SetupProviderConfig(&cfg); err != nil {
@@ -61,17 +60,35 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		return err
 	}
 
-	interactive := isInteractiveSession()
+	interactive := ui.CanPrompt()
 	query := ""
+	querySource := ""
+	inferredTaskKey := ""
 	if interactive {
-		query, err = ui.Ask("Search task by key or title", "")
-		if err != nil {
-			return err
+		branch, branchErr := gitutil.CurrentBranch(repoRoot)
+		if branchErr == nil {
+			inferredTaskKey = strings.TrimSpace(extractTaskKeyFromBranch(cfg.Rules.VerifyBranchName, branch))
+		}
+		if inferredTaskKey != "" {
+			querySource = "branch inference (interactive)"
+			query = inferredTaskKey
+			fmt.Printf("Interactive mode: using task key inferred from branch: %s\n", query)
+		} else {
+			querySource = "interactive prompt"
+			query, err = ui.Ask("Search task by key or title", "")
+			if err != nil {
+				return err
+			}
 		}
 	} else {
+		querySource = "branch inference"
 		branch, branchErr := gitutil.CurrentBranch(repoRoot)
 		if branchErr == nil {
 			query = extractTaskKeyFromBranch(cfg.Rules.VerifyBranchName, branch)
+		}
+		if strings.TrimSpace(query) == "" {
+			querySource = "provider default (no query)"
+			fmt.Println("Non-interactive mode: no query inferred; using provider default task search.")
 		}
 		if strings.TrimSpace(query) != "" {
 			fmt.Printf("Non-interactive mode: using task key inferred from branch: %s\n", query)
@@ -122,8 +139,13 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 
 	// Log all tasks found so they are visible to the user in the commit editor and console.
 	if tasks != nil && len(tasks) > 0 {
+		displayQuery := strings.TrimSpace(query)
+		if displayQuery == "" {
+			displayQuery = "(none)"
+		}
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for query '%s'\n\n", query))
+		sb.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for query '%s'\n", displayQuery))
+		sb.WriteString(fmt.Sprintf("Query source: %s\n\n", querySource))
 		sb.WriteString(fmt.Sprintf("Found %d tasks:\n", len(tasks)))
 		for _, t := range tasks {
 			sb.WriteString("- ")
@@ -170,8 +192,8 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 				// persist alert message so prepare-commit-msg can show it in the editor
 				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
 				fmt.Print(commentizeContent(buf.String()))
-				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
-				return nil
+				// Abort commit so the editor is not opened when no task key can be inferred.
+				return fmt.Errorf(errs.AbortCommitNoTaskKey)
 			}
 			// If branch task key exists but doesn't look like a provider task key (e.g. JIRA 'ABC-123'), abort.
 			// This prevents committing when the branch contains a numeric placeholder like '1' that won't match tasks.
@@ -214,9 +236,17 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		}
 		fmt.Println("No tasks found. Continuing with placeholder values: task_key=NONE, task_title=NONE, task_epic=NONE.")
 	} else {
-		selected, err = ui.SelectTask(tasks)
-		if err != nil {
-			return err
+		if inferredTaskKey != "" {
+			selected = selectTaskByExactKey(tasks, inferredTaskKey)
+			if selected != nil {
+				fmt.Printf("Auto-selected task from branch key: %s - %s\n", selected.Key, selected.Title)
+			}
+		}
+		if selected == nil {
+			selected, err = ui.SelectTask(tasks)
+			if err != nil {
+				return err
+			}
 		}
 		if selected == nil {
 			return fmt.Errorf(errs.TaskSelectionCanceled)
@@ -229,7 +259,7 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 			return err
 		}
 		branchTaskKey := normalizeTaskKeyForBranch(selected.Key)
-		if err := validateBranch(cfg.Rules.VerifyBranchName, branch, branchTaskKey); err != nil {
+		if err := validateBranch(cfg.Rules.VerifyBranchName, branch, branchTaskKey, selected.Title); err != nil {
 			return err
 		}
 	}
@@ -521,7 +551,28 @@ func normalizeTaskKeyForBranch(taskKey string) string {
 	return strings.TrimPrefix(strings.TrimSpace(taskKey), "#")
 }
 
-func validateBranch(pattern, branch, taskKey string) error {
+func selectTaskByExactKey(tasks []domain.Task, expectedKey string) *domain.Task {
+	expected := canonicalTaskKey(expectedKey)
+	if expected == "" {
+		return nil
+	}
+
+	for _, t := range tasks {
+		if canonicalTaskKey(t.Key) == expected {
+			selected := t
+			return &selected
+		}
+	}
+	return nil
+}
+
+func canonicalTaskKey(k string) string {
+	k = strings.TrimSpace(k)
+	k = strings.TrimPrefix(k, "#")
+	return strings.ToUpper(k)
+}
+
+func validateBranch(pattern, branch, taskKey, taskTitle string) error {
 	raw := strings.ReplaceAll(pattern, "{task_key}", taskKey)
 	regex := regexp.QuoteMeta(raw)
 	regex = strings.ReplaceAll(regex, "\\*", ".*")
@@ -531,20 +582,69 @@ func validateBranch(pattern, branch, taskKey string) error {
 		return fmt.Errorf(errs.FmtInvalidBranchPattern, err)
 	}
 	if !ok {
-		return fmt.Errorf(errs.FmtInvalidBranchName, branch, raw)
+		suggestion := suggestedBranchName(pattern, taskKey, taskTitle)
+		return fmt.Errorf(errs.FmtInvalidBranchName, branch, raw, suggestion)
 	}
 	return nil
 }
 
-func isInteractiveSession() bool {
-	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+func suggestedBranchName(pattern, taskKey, taskTitle string) string {
+	slug := slugifyForBranch(taskTitle)
+	if slug == "" {
+		slug = "short-description"
+	}
+
+	s := strings.ReplaceAll(pattern, "{task_key}", taskKey)
+	if strings.Contains(s, "*") {
+		s = strings.ReplaceAll(s, "*", slug)
+	} else if !strings.HasSuffix(s, slug) {
+		if strings.HasSuffix(s, "-") || strings.HasSuffix(s, "/") {
+			s += slug
+		} else {
+			s += "-" + slug
+		}
+	}
+	return s
+}
+
+func slugifyForBranch(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range v {
+		isLetter := r >= 'a' && r <= 'z'
+		isDigit := r >= '0' && r <= '9'
+		if isLetter || isDigit {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		return ""
+	}
+	if len(slug) > 40 {
+		slug = slug[:40]
+		slug = strings.Trim(slug, "-")
+	}
+	return slug
 }
 
 func shouldSkipValidation() bool {
 	// Skip only for VS Code SCM non-interactive commits, not for integrated terminal runs.
 	if strings.TrimSpace(os.Getenv("VSCODE_GIT_IPC_HANDLE")) != "" &&
 		!strings.EqualFold(strings.TrimSpace(os.Getenv("TERM_PROGRAM")), "vscode") &&
-		!isInteractiveSession() {
+		!ui.CanPrompt() {
 		return true
 	}
 
