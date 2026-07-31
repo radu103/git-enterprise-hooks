@@ -119,7 +119,11 @@ func (j *JiraClient) SearchTasks(ctx context.Context, cfg config.ProviderConfig,
 
 	if resp.StatusCode == 410 {
 		// New Jira Cloud requires POST /rest/api/3/search/jql with JSON body
-		jqlBody := map[string]any{"jql": jql, "maxResults": 20}
+		jqlBody := map[string]any{
+			"jql":        jql,
+			"maxResults": 20,
+			"fields":     []string{"summary", "status", "parent"},
+		}
 		b, _ := json.Marshal(jqlBody)
 		u2 := base + "/rest/api/3/search/jql"
 		req2, err2 := http.NewRequestWithContext(ctx, http.MethodPost, u2, bytes.NewBuffer(b))

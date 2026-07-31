@@ -19,6 +19,18 @@ import (
 	"golang.org/x/term"
 )
 
+func commentizeContent(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			lines[i] = "#"
+		} else {
+			lines[i] = "# " + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPath string) error {
 	if shouldSkipValidation() {
 		fmt.Println("git-enterprise-hooks: non-interactive commit mode detected; using fallback commit message.")
@@ -73,14 +85,14 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 				buf.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for inferred token '%s'\n\n", query))
 				if sErr != nil {
 					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
-					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
-					fmt.Print(buf.String())
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+					fmt.Print(commentizeContent(buf.String()))
 					return nil
 				}
 				if len(suggestions) == 0 {
 					buf.WriteString("No similar tasks found.\n")
-					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
-					fmt.Print(buf.String())
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+					fmt.Print(commentizeContent(buf.String()))
 					return nil
 				}
 				if len(suggestions) == 1 {
@@ -94,8 +106,8 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 					for _, t := range suggestions {
 						fmt.Fprintf(&buf, "- %s | %s | Epic: %s | Status: %s | Provider: %s\n", t.Key, t.Title, t.Epic, t.Status, t.Provider)
 					}
-					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
-					fmt.Print(buf.String())
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+					fmt.Print(commentizeContent(buf.String()))
 					return nil
 				}
 			}
@@ -118,8 +130,8 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 			sb.WriteString(fmt.Sprintf("%s | %s | Epic: %s | Status: %s | Provider: %s\n", t.Key, t.Title, t.Epic, t.Status, t.Provider))
 		}
 		// Persist the search results to the message file so prepare-commit-msg can show them.
-		_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(sb.String()), 0o644)
-		fmt.Print(sb.String())
+		_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(sb.String())), 0o644)
+		fmt.Print(commentizeContent(sb.String()))
 	}
 	if cfg.Rules.RejectClosed {
 		tasks = filterOpenTasks(cli, tasks)
@@ -145,7 +157,7 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 				var buf strings.Builder
 				buf.WriteString("git-enterprise-hooks: commit aborted — no task key inferred from branch\n\n")
 				buf.WriteString(fmt.Sprintf("Branch: %s\nProject: %s\n\n", branch, project))
-				if sErr != nil {
+				if err != nil {
 					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
 				} else if len(suggestions) == 0 {
 					buf.WriteString("No similar tasks found.\n")
@@ -156,8 +168,8 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 					}
 				}
 				// persist alert message so prepare-commit-msg can show it in the editor
-				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
-				fmt.Print(buf.String())
+				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+				fmt.Print(commentizeContent(buf.String()))
 				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
 				return nil
 			}
@@ -185,8 +197,8 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 						fmt.Fprintf(&buf, "- %s (%s) - %s\n", t.Key, project, t.Title)
 					}
 				}
-				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(buf.String()), 0o644)
-				fmt.Print(buf.String())
+				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+				fmt.Print(commentizeContent(buf.String()))
 				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
 				return nil
 			}
