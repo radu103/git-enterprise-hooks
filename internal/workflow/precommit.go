@@ -577,6 +577,10 @@ func extractTaskKeyFromBranch(pattern, branch string) string {
 	if strings.TrimSpace(pattern) == "" || !strings.Contains(pattern, "{task_key}") {
 		return ""
 	}
+	// Prefer an explicit task-key match anywhere in branch (e.g. feature/KAN-1-desc -> KAN-1).
+	if m := regexp.MustCompile(`(?i)[A-Z]+-[0-9]+`).FindString(branch); strings.TrimSpace(m) != "" {
+		return strings.ToUpper(strings.TrimSpace(m))
+	}
 	parts := strings.SplitN(pattern, "{task_key}", 2)
 	prefix := parts[0]
 	suffix := parts[1]
@@ -587,6 +591,15 @@ func extractTaskKeyFromBranch(pattern, branch string) string {
 	remaining := strings.TrimPrefix(branch, prefix)
 
 	if suffix == "" {
+		// If the remaining fragment contains a dash (e.g. KAN-1-some-desc),
+		// treat the task key as the first two dash-separated tokens (KAN-1).
+		rem := strings.TrimSpace(remaining)
+		if strings.Contains(rem, "-") {
+			parts := strings.SplitN(rem, "-", 3)
+			if len(parts) >= 2 {
+				return parts[0] + "-" + parts[1]
+			}
+		}
 		return remaining
 	}
 
@@ -597,7 +610,22 @@ func extractTaskKeyFromBranch(pattern, branch string) string {
 	}
 	idx := strings.Index(remaining, suffixStatic)
 	if idx <= 0 {
+		// Fallback: maybe branch contains path segments; try last segment after '/'
+		seg := remaining
+		if strings.Contains(seg, "/") {
+			seg = seg[strings.LastIndex(seg, "/")+1:]
+		}
+		if strings.Contains(seg, "-") {
+			parts := strings.SplitN(seg, "-", 3)
+			if len(parts) >= 2 {
+				return parts[0] + "-" + parts[1]
+			}
+		}
 		return ""
 	}
-	return remaining[:idx]
+	candidate := remaining[:idx]
+	if m := regexp.MustCompile(`(?i)[A-Z]+-[0-9]+`).FindString(candidate); strings.TrimSpace(m) != "" {
+		return strings.ToUpper(strings.TrimSpace(m))
+	}
+	return candidate
 }
