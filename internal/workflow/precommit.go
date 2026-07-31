@@ -19,6 +19,18 @@ import (
 	"golang.org/x/term"
 )
 
+func commentizeContent(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			lines[i] = "#"
+		} else {
+			lines[i] = "# " + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPath string) error {
 	if shouldSkipValidation() {
 		fmt.Println("git-enterprise-hooks: non-interactive commit mode detected; using fallback commit message.")
@@ -63,10 +75,41 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		}
 		if strings.TrimSpace(query) != "" {
 			fmt.Printf("Non-interactive mode: using task key inferred from branch: %s\n", query)
-			// validate inferred key looks like provider task key (e.g. ABC-123). If not, abort.
+			// validate inferred key looks like provider task key (e.g. ABC-123).
 			matched, _ := regexp.MatchString(`^[A-Za-z]+-[0-9]+$`, strings.TrimSpace(query))
 			if !matched {
-				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+				// If the inferred token doesn't look like a task key, try searching the provider for similar tasks.
+				fmt.Printf("Inferred token '%s' doesn't match task-key pattern; searching provider for similar tasks...\n", query)
+				suggestions, sErr := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, query)
+				var buf strings.Builder
+				buf.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for inferred token '%s'\n\n", query))
+				if sErr != nil {
+					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+					fmt.Print(commentizeContent(buf.String()))
+					return nil
+				}
+				if len(suggestions) == 0 {
+					buf.WriteString("No similar tasks found.\n")
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+					fmt.Print(commentizeContent(buf.String()))
+					return nil
+				}
+				if len(suggestions) == 1 {
+					// Auto-select the single matching suggestion and continue.
+					selected := suggestions[0]
+					fmt.Printf("Auto-selected task from suggestions: %s - %s\n", selected.Key, selected.Title)
+					// set query to the exact task key so the later lookup picks it
+					query = selected.Key
+				} else {
+					buf.WriteString(fmt.Sprintf("Found %d similar tasks:\n", len(suggestions)))
+					for _, t := range suggestions {
+						fmt.Fprintf(&buf, "- %s | %s | Epic: %s | Status: %s | Provider: %s\n", t.Key, t.Title, t.Epic, t.Status, t.Provider)
+					}
+					_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+					fmt.Print(commentizeContent(buf.String()))
+					return nil
+				}
 			}
 		}
 	}
@@ -75,6 +118,20 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		fmt.Printf("Task lookup failed for provider '%s': %v\n", cfg.Rules.Provider.Type, err)
 		fmt.Println("Continuing with placeholder values: task_key=NONE, task_title=NONE, task_epic=NONE.")
 		tasks = nil
+	}
+
+	// Log all tasks found so they are visible to the user in the commit editor and console.
+	if tasks != nil && len(tasks) > 0 {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("git-enterprise-hooks: search results for query '%s'\n\n", query))
+		sb.WriteString(fmt.Sprintf("Found %d tasks:\n", len(tasks)))
+		for _, t := range tasks {
+			sb.WriteString("- ")
+			sb.WriteString(fmt.Sprintf("%s | %s | Epic: %s | Status: %s | Provider: %s\n", t.Key, t.Title, t.Epic, t.Status, t.Provider))
+		}
+		// Persist the search results to the message file so prepare-commit-msg can show them.
+		_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(sb.String())), 0o644)
+		fmt.Print(commentizeContent(sb.String()))
 	}
 	if cfg.Rules.RejectClosed {
 		tasks = filterOpenTasks(cli, tasks)
@@ -90,13 +147,60 @@ func RunPreCommit(ctx context.Context, repoRoot string, cfg config.Config, cfgPa
 		if err == nil {
 			branchTaskKey := extractTaskKeyFromBranch(cfg.Rules.VerifyBranchName, branch)
 			if strings.TrimSpace(branchTaskKey) == "" {
-				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+				// No task key in branch. Try to surface similar tasks from the provider and include project.
+				project := strings.TrimSpace(cfg.Rules.Provider.ProjectKey)
+				if project == "" {
+					project = strings.TrimSpace(cfg.Rules.Provider.TokenURL)
+				}
+				fmt.Printf("No task key inferred from branch '%s'. Searching for similar tasks in project '%s'...\n", branch, project)
+				suggestions, sErr := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, branch)
+				var buf strings.Builder
+				buf.WriteString("git-enterprise-hooks: commit aborted — no task key inferred from branch\n\n")
+				buf.WriteString(fmt.Sprintf("Branch: %s\nProject: %s\n\n", branch, project))
+				if err != nil {
+					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
+				} else if len(suggestions) == 0 {
+					buf.WriteString("No similar tasks found.\n")
+				} else {
+					buf.WriteString("Similar tasks:\n")
+					for _, t := range suggestions {
+						fmt.Fprintf(&buf, "- %s (%s) - %s\n", t.Key, project, t.Title)
+					}
+				}
+				// persist alert message so prepare-commit-msg can show it in the editor
+				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+				fmt.Print(commentizeContent(buf.String()))
+				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
+				return nil
 			}
 			// If branch task key exists but doesn't look like a provider task key (e.g. JIRA 'ABC-123'), abort.
 			// This prevents committing when the branch contains a numeric placeholder like '1' that won't match tasks.
 			matched, _ := regexp.MatchString(`^[A-Za-z]+-[0-9]+$`, strings.TrimSpace(branchTaskKey))
 			if !matched {
-				return fmt.Errorf(errs.AbortCommitNoTaskKey)
+				// Provide suggestions by searching with the raw branch as query
+				project := strings.TrimSpace(cfg.Rules.Provider.ProjectKey)
+				if project == "" {
+					project = strings.TrimSpace(cfg.Rules.Provider.TokenURL)
+				}
+				fmt.Printf("Inferred branch token '%s' does not match task-key pattern. Searching for similar tasks in project '%s'...\n", branchTaskKey, project)
+				suggestions, sErr := cli.SearchTasks(ctx, cfg.Rules.Provider, tok, branchTaskKey)
+				var buf strings.Builder
+				buf.WriteString("git-enterprise-hooks: commit aborted — inferred branch token does not match expected task-key pattern\n\n")
+				buf.WriteString(fmt.Sprintf("Inferred token: %s\nProject: %s\n\n", branchTaskKey, project))
+				if sErr != nil {
+					fmt.Fprintf(&buf, "Task lookup failed while searching for suggestions: %v\n", sErr)
+				} else if len(suggestions) == 0 {
+					buf.WriteString("No similar tasks found.\n")
+				} else {
+					buf.WriteString("Similar tasks:\n")
+					for _, t := range suggestions {
+						fmt.Fprintf(&buf, "- %s (%s) - %s\n", t.Key, project, t.Title)
+					}
+				}
+				_ = os.WriteFile(filepath.Join(repoRoot, ".git", "git-enterprise-hooks-message.txt"), []byte(commentizeContent(buf.String())), 0o644)
+				fmt.Print(commentizeContent(buf.String()))
+				// Exit successfully so prepare-commit-msg can copy the alert into the commit editor.
+				return nil
 			}
 		}
 
@@ -473,6 +577,10 @@ func extractTaskKeyFromBranch(pattern, branch string) string {
 	if strings.TrimSpace(pattern) == "" || !strings.Contains(pattern, "{task_key}") {
 		return ""
 	}
+	// Prefer an explicit task-key match anywhere in branch (e.g. feature/KAN-1-desc -> KAN-1).
+	if m := regexp.MustCompile(`(?i)[A-Z]+-[0-9]+`).FindString(branch); strings.TrimSpace(m) != "" {
+		return strings.ToUpper(strings.TrimSpace(m))
+	}
 	parts := strings.SplitN(pattern, "{task_key}", 2)
 	prefix := parts[0]
 	suffix := parts[1]
@@ -483,6 +591,15 @@ func extractTaskKeyFromBranch(pattern, branch string) string {
 	remaining := strings.TrimPrefix(branch, prefix)
 
 	if suffix == "" {
+		// If the remaining fragment contains a dash (e.g. KAN-1-some-desc),
+		// treat the task key as the first two dash-separated tokens (KAN-1).
+		rem := strings.TrimSpace(remaining)
+		if strings.Contains(rem, "-") {
+			parts := strings.SplitN(rem, "-", 3)
+			if len(parts) >= 2 {
+				return parts[0] + "-" + parts[1]
+			}
+		}
 		return remaining
 	}
 
@@ -493,7 +610,22 @@ func extractTaskKeyFromBranch(pattern, branch string) string {
 	}
 	idx := strings.Index(remaining, suffixStatic)
 	if idx <= 0 {
+		// Fallback: maybe branch contains path segments; try last segment after '/'
+		seg := remaining
+		if strings.Contains(seg, "/") {
+			seg = seg[strings.LastIndex(seg, "/")+1:]
+		}
+		if strings.Contains(seg, "-") {
+			parts := strings.SplitN(seg, "-", 3)
+			if len(parts) >= 2 {
+				return parts[0] + "-" + parts[1]
+			}
+		}
 		return ""
 	}
-	return remaining[:idx]
+	candidate := remaining[:idx]
+	if m := regexp.MustCompile(`(?i)[A-Z]+-[0-9]+`).FindString(candidate); strings.TrimSpace(m) != "" {
+		return strings.ToUpper(strings.TrimSpace(m))
+	}
+	return candidate
 }
