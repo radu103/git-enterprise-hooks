@@ -27,28 +27,6 @@ If PowerShell execution policy blocks scripts:
 powershell -ExecutionPolicy Bypass -File .\build-release.ps1
 ```
 
-## Publish Releases (Windows, Homebrew, apt)
-
-This repository includes:
-
-- [.goreleaser.yml](.goreleaser.yml) for release packaging and package-manager publishing.
-- [.github/workflows/release.yml](.github/workflows/release.yml) to run on version tags.
-
-### One-Time Setup
-
-1. Create/prepare target repositories:
-	- Homebrew tap: `radu103/homebrew-git-enterprise-hooks`
-	- Scoop bucket: `radu103/scoop-bucket`
-2. Add repository secrets in GitHub:
-	- `HOMEBREW_TAP_GITHUB_TOKEN`
-	- `SCOOP_BUCKET_GITHUB_TOKEN`
-	- `WINGET_GITHUB_TOKEN`
-3. Optional apt publishing via Cloudsmith: add
-	- `CLOUDSMITH_API_KEY`
-	- `CLOUDSMITH_OWNER`
-	- `CLOUDSMITH_REPO`
-	- optional: `CLOUDSMITH_DIST`, `CLOUDSMITH_COMPONENT`
-
 ### Release Command
 
 1. Tag and push:
@@ -56,44 +34,6 @@ This repository includes:
 ```powershell
 git tag v1.0.0
 git push origin v1.0.0
-```
-
-2. GitHub Action will:
-	- run tests
-	- create GitHub Release with checksums and artifacts
-	- publish/update Homebrew formula
-	- publish/update Scoop manifest
-	- open/update Winget manifest PR
-	- upload `.deb` packages to Cloudsmith (if secrets exist)
-
-### Install Commands
-
-Windows (Scoop):
-
-```powershell
-scoop bucket add radu103 https://github.com/radu103/scoop-bucket
-scoop install git-enterprise-hooks
-```
-
-Windows (Winget):
-
-```powershell
-winget install Radu103.GitEnterpriseHooks
-```
-
-macOS/Linux (Homebrew tap):
-
-```bash
-brew tap radu103/git-enterprise-hooks
-brew install git-enterprise-hooks
-```
-
-Debian/Ubuntu (apt via Cloudsmith):
-
-```bash
-curl -1sLf 'https://dl.cloudsmith.io/public/<owner>/<repo>/setup.deb.sh' | sudo -E bash
-sudo apt update
-sudo apt install git-enterprise-hooks
 ```
 
 ## Enable In A Repository
