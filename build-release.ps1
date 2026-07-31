@@ -10,8 +10,7 @@ if (Test-Path $releaseDir) {
 
 $targets = @(
     @{ Goos = "windows"; Goarch = "amd64"; Ext = ".exe" },
-    @{ Goos = "linux"; Goarch = "amd64"; Ext = "" },
-    @{ Goos = "darwin"; Goarch = "amd64"; Ext = "" }
+    @{ Goos = "linux"; Goarch = "amd64"; Ext = "" }
 )
 
 $repoOwner = "radu103"
