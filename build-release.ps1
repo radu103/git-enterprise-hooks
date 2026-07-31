@@ -70,7 +70,9 @@ if (Test-Path $windowsBinary) {
                 hash = $hash
             }
         }
-        bin = @($windowsExeName)
+        # Expose a stable command name in Scoop regardless of the release filename.
+        # Use unary comma to keep the inner pair as a single nested array item.
+        bin = @(, @($windowsExeName, "git-enterprise-hooks"))
         autoupdate = [ordered]@{
             architecture = [ordered]@{
                 "64bit" = [ordered]@{
